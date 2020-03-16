@@ -1,0 +1,195 @@
+---
+title: "Greek Yogurt Case Assignment"
+author: "Yanzi Cai, Ao Zhang, Sizhu Wu, Dong Li, Keyan Wang"
+output: html_document
+---
+
+### Project Background
+* 
+* Dataset
+  + itemAttributes Updats.csv" 
+
+
+```{r load data}
+library(foreign)
+library(ggplot2)
+
+dataResponse=read.csv("survResponses.csv")
+dataQuestion=read.csv("survQuestions.csv")
+dataStoreSales=read.csv("storeItemSales.csv")
+dataHousehold=read.csv("hshldDemograph.csv")
+dataSurveySales=read.csv("survItemSales.csv")
+dataItemAttr=read.csv("itemAttributes Updats.csv")
+```
+
+
+```{r OUTPUT FOR SLIDE TWO}
+###################### OUTPUT FOR SLIDE TWO ######################
+dataItemAttrGreek=dataItemAttr[dataItemAttr$Class=="GREEK",]
+dataItemAttrRegular=dataItemAttr[dataItemAttr$Class=="REGULAR",]
+dataGreek=merge(dataSurveySales,dataItemAttrGreek,on=Item.Num,all=FALSE)
+dataRegular=merge(dataSurveySales,dataItemAttrRegular,on=Item.Num,all=FALSE)
+
+#Greek Yogurt Sales
+dataGreekSales=aggregate(
+  x=dataGreek$Sales,
+  by=list(dataGreek$Flavor1),
+  FUN=sum) 
+colnames(dataGreekSales)=c("Flavor", "Sales")
+
+#Regular Yogurt Sales
+dataRegularSales=aggregate(
+  x=dataRegular$Sales,   
+  by=list(dataRegular$Flavor1), 
+  FUN=sum)  
+colnames(dataRegularSales)=c("Flavor", "Sales")
+
+gtotal=sum(dataGreekSales$Sales)
+gsmall=subset(dataGreekSales, Sales< (0.05* gtotal))
+Majorgreekflacor=subset(dataGreekSales, Sales>= (0.05* gtotal))
+sum(gsmall$Sales)
+others=data.frame(Flavor='Others', Sales= 25437.9)
+data=rbind(Majorgreekflacor, others)
+###################### OUTPUT FOR SLIDE TWO ######################
+```
+
+
+```{r OUTPUT FOR SLIDE THREE}
+###################### OUTPUT FOR SLIDE THREE ######################
+#survey data clean
+dataSurvPref=merge(dataSurveySales,dataItemAttrGreek,on=Item.Num,all=FALSE)
+dataSurvPrefAgreg=aggregate(Units~Flavor1,data=dataSurvPref,FUN=sum)
+
+dataSurvPref_test=merge(dataSurveySales,dataItemAttrRegular,on=Item.Num,all=FALSE)
+dataSurvPrefAgreg_test=aggregate(Sales~Flavor1,data=dataSurvPref_test,FUN=sum)
+
+dataAnalyze=dataResponse[,c(15:37)]
+dataAnalyze$na_count=apply(dataAnalyze, 1, function(x) sum(is.na(x)))
+
+vec=rep(0,nrow(dataAnalyze))
+for(i in 1:nrow(dataAnalyze)){
+  if (dataAnalyze$na_count[i] == 23){
+    vec[i]=FALSE
+  }else{
+    vec[i]=TRUE
+  }
+}
+
+dataResponse$na=vec
+dataResponse=dataResponse[dataResponse$na==1,]
+
+dataResponse$interval=difftime(dataResponse$V9,dataResponse$V8,units=c('mins'))
+dataResponse_test=dataResponse[dataResponse$interval>=5,]
+dataResponse=dataResponse_test[dataResponse_test$interval<=30,]
+###################### OUTPUT FOR SLIDE THREE ######################
+```
+
+
+```{r OUTPUT FOR SLIDE FOUR}
+###################### OUTPUT FOR SLIDE FOUR ######################
+#attribute
+Attribute=apply(dataQuestion, 1, function(x) sapply(strsplit(x, "-"), "[", 2))[c(7:14)]
+Flavors=apply(dataQuestion, 1, function(x) sapply(strsplit(x, "-"), "[", 2))[c(15:37)]
+
+attrData=dataResponse[,c(7:14)]
+colnames(attrData)=Attribute
+attrDataSum=as.data.frame(colSums(attrData,na.rm=TRUE))
+colnames(attrDataSum)="Importance"
+
+#flavor
+flavorData=dataResponse[,c(15:37)]
+colnames(flavorData)=Flavors
+
+var=matrix(nrow=23,ncol=3)
+for (x in 1:23){
+  var[x,1]=sum(flavorData[[x]]==0,na.rm=TRUE)
+  var[x,2]=sum(flavorData[[x]]==1,na.rm=TRUE)
+  var[x,3]=sum(flavorData[[x]]==2,na.rm=TRUE)
+}
+
+flavorDataSum=as.data.frame(var)
+rownames(flavorDataSum)=Flavors
+colnames(flavorDataSum)=c('Regularly','Occasionally','Never')
+###################### OUTPUT FOR SLIDE FOUR ######################
+```
+
+
+```{r OUTPUT FOR SLIDE FIVE}
+###################### OUTPUT FOR SLIDE FIVE ######################
+flavorData_Reach=flavorData
+
+
+for(n in 1:23){
+  flavorData_Reach[[n]][flavorData_Reach[[n]] == 1] = 2
+  flavorData_Reach[[n]][flavorData_Reach[[n]] == 0] = 1
+  flavorData_Reach[[n]][flavorData_Reach[[n]] == 2] = 0
+  flavorData_Reach[[n]][is.na(flavorData_Reach[[n]])] = 0
+}
+
+#TURF analysis
+measReach = function(data){
+  if(is.null(dim(data))){ 
+    ret = sum(data>0,na.rm=TRUE)/length(data)
+  } else if(ncol(data)==1){ 
+    ret = sum(data>0,na.rm=TRUE)/length(data)
+  }
+  else { 
+    ret = sum(apply(data>0,1,any),na.rm=TRUE)/nrow(data)
+  }
+}
+
+evalNext = function(nextSet,set,data,measure=measReach){
+  vals = numeric(length(nextSet)) 
+  for(k in 1:length(nextSet)){ 
+    if(length(set)==0){         
+      vals[k] = measure(data[,nextSet[k]]) 
+    } else {                    
+      vals[k] = measure(data[,c(set,nextSet[k])])
+    }
+  }
+  vals
+}
+
+
+evalFull = function(fullSet,data,origSet=numeric(0),measure=measReach){
+  curSet = origSet; 
+  remSet = fullSet[!(fullSet%in%origSet)]; 
+  K = length(remSet)
+  optVals = numeric(K); 
+  ordSet = numeric(K); 
+  for(i in 1:K){          
+    tmpVals = evalNext(remSet,curSet,data,measure); 
+    k = which.max(tmpVals) 
+    optVals[i] = tmpVals[k] 
+    ordSet[i] = remSet[k]   
+    curSet = c(curSet,ordSet[i]); 
+    remSet = remSet[-k];          
+  }
+  turf = list(ordSet=ordSet,optVals=optVals,origSet=origSet,origVal=measure(data[,origSet]),measure=measure,pnames=colnames(data))
+  class(turf)="TURF" 
+  turf 
+}
+
+plot.TURF=function(turf,...){
+  if(class(turf)!="TURF"){
+    cat("Object not a turf.")
+  } else {
+    df = with(turf,data.frame(vals = c(origVal,optVals),titles=paste(0:length(ordSet),c("Original",pnames[ordSet]),sep=":")))
+    dodge = position_dodge(width=.75); 
+    gp = ggplot(df,aes(y=vals,x=titles))
+    gp + geom_bar(position=dodge,stat="identity",col=1,fill=4,width=.75)
+  }
+}
+
+
+flavorData_Reach=data.frame(flavorData_Reach)
+turf = evalFull(c(1:23),flavorData_Reach,c(4,10,15,17,20,22))
+plot(turf)
+###################### OUTPUT FOR SLIDE FIVE ######################
+```
+
+
+
+
+
+
